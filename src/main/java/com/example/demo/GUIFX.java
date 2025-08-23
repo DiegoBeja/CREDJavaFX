@@ -19,7 +19,7 @@ public class GUIFX extends Application {
     private TextField nombre;
     private TextField direccion;
     private TextField telefono;
-    private Button altaBoton, bajaBoton, modifBoton;
+    private Button altaBoton, bajaBoton, modifBoton, agregarTel;
     private TableView<Usuario> tabla;
     private ObservableList<Usuario> listaUsuarios;
 
@@ -60,7 +60,8 @@ public class GUIFX extends Application {
         HBox panelBotones = new HBox(10);
         bajaBoton = new Button("Baja");
         modifBoton = new Button("Modificar Usuario");
-        panelBotones.getChildren().addAll(bajaBoton, modifBoton);
+        agregarTel = new Button("Agregar Teléfono");
+        panelBotones.getChildren().addAll(bajaBoton, modifBoton, agregarTel);
 
         tabla = new TableView<>();
         listaUsuarios = FXCollections.observableArrayList();
@@ -91,6 +92,7 @@ public class GUIFX extends Application {
         altaBoton.setOnAction(e -> altaUsuario());
         bajaBoton.setOnAction(e -> bajaUsuario());
         modifBoton.setOnAction(e -> modificarUsuario(stage));
+        agregarTel.setOnAction(e -> agregarTelefono(stage));
 
         agregarUsuariosTabla();
 
@@ -219,6 +221,62 @@ public class GUIFX extends Application {
 
         cancelar.setOnAction(ev -> ventanaModif.close());
 
+        ventanaModif.setScene(new Scene(layout));
+        ventanaModif.showAndWait();
+    }
+
+    private void agregarTelefono(Stage si){
+        Usuario usuarioSelect = tabla.getSelectionModel().getSelectedItem();
+
+        if(usuarioSelect == null){
+            new Alert(Alert.AlertType.WARNING, "Selecciona un usuario para modificar").showAndWait();
+            return;
+        }
+
+        Stage ventanaModif = new Stage();
+        ventanaModif.initModality(Modality.APPLICATION_MODAL);
+        ventanaModif.initOwner(si);
+        ventanaModif.setTitle("Agregar Teléfono");
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(10));
+
+        TextField campoTelefono = new TextField();
+
+        grid.add(new Label("Teléfono:"), 0, 2);
+        grid.add(campoTelefono, 1, 2);
+
+        HBox botones = new HBox(10);
+        botones.setAlignment(Pos.CENTER);
+        Button guardar = new Button("Guardar");
+        Button cancelar = new Button("Cancelar");
+        botones.getChildren().addAll(guardar, cancelar);
+
+        VBox layout = new VBox(10, grid, botones);
+        layout.setPadding(new Insets(10));
+
+        guardar.setOnAction(e -> {
+            String sqlTel = "INSERT INTO Telefonos (personaId, telefono) VALUES (?,?)";
+
+            try (Connection conexion = DriverManager.getConnection(URL, USER, PASSWORD);
+                 PreparedStatement psTel = conexion.prepareStatement(sqlTel)) {
+
+                psTel.setString(1, usuarioSelect.getId());
+                psTel.setString(2, campoTelefono.getText());
+                psTel.executeUpdate();
+
+                new Alert(Alert.AlertType.INFORMATION, "Teléfono agregado correctamente").showAndWait();
+                agregarUsuariosTabla();
+                ventanaModif.close();
+
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        });
+
+        cancelar.setOnAction(ev -> ventanaModif.close());
         ventanaModif.setScene(new Scene(layout));
         ventanaModif.showAndWait();
     }
