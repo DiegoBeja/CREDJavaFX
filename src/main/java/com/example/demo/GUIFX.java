@@ -19,7 +19,7 @@ public class GUIFX extends Application {
     private TextField nombre;
     private TextField direccion;
     private TextField telefono;
-    private Button altaBoton, bajaBoton, modifBoton, agregarTel;
+    private Button altaBoton, bajaBoton, modifBoton, agregarTel, agregarDir;
     private TableView<Usuario> tabla;
     private ObservableList<Usuario> listaUsuarios;
 
@@ -61,7 +61,8 @@ public class GUIFX extends Application {
         bajaBoton = new Button("Baja");
         modifBoton = new Button("Modificar Usuario");
         agregarTel = new Button("Agregar Teléfono");
-        panelBotones.getChildren().addAll(bajaBoton, modifBoton, agregarTel);
+        agregarDir = new Button("Agregar Dirección");
+        panelBotones.getChildren().addAll(bajaBoton, modifBoton, agregarTel, agregarDir);
 
         tabla = new TableView<>();
         listaUsuarios = FXCollections.observableArrayList();
@@ -93,6 +94,7 @@ public class GUIFX extends Application {
         bajaBoton.setOnAction(e -> bajaUsuario());
         modifBoton.setOnAction(e -> modificarUsuario(stage));
         agregarTel.setOnAction(e -> agregarTelefono(stage));
+        agregarDir.setOnAction(e -> agregarDireccion(stage));
 
         agregarUsuariosTabla();
 
@@ -109,17 +111,22 @@ public class GUIFX extends Application {
     }
 
     private void altaUsuario() {
-        String nuevoUsuario = "INSERT INTO Personas (nombre, direccion) VALUES (?, ?)";
-
+        String nuevoUsuario = "INSERT INTO Personas (nombre) VALUES (?)";
         try (Connection conexion = DriverManager.getConnection(URL, USER, PASSWORD);
              PreparedStatement ps = conexion.prepareStatement(nuevoUsuario, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, nombre.getText());
-            ps.setString(2, direccion.getText());
             ps.executeUpdate();
 
             try (ResultSet generatedKeys = ps.getGeneratedKeys()) {
                 if (generatedKeys.next()) {
                     long personaId = generatedKeys.getLong(1);
+
+                    String sqlDir = "INSERT INTO Direcciones (personaId, direccion) VALUES (?, ?)";
+                    try (PreparedStatement psDir = conexion.prepareStatement(sqlDir)) {
+                        psDir.setLong(1, personaId);
+                        psDir.setString(2, direccion.getText());
+                        psDir.executeUpdate();
+                    }
 
                     String sqlTel = "INSERT INTO Telefonos (personaId, telefono) VALUES (?, ?)";
                     try (PreparedStatement psTel = conexion.prepareStatement(sqlTel)) {
@@ -194,22 +201,48 @@ public class GUIFX extends Application {
         layout.setPadding(new Insets(10));
 
         guardar.setOnAction(ev -> {
-            String sql = "UPDATE Personas SET nombre=?, direccion=? WHERE id=?";
-            String sqlTel = "UPDATE Telefonos SET telefono=? WHERE personaId=?";
+            String nombreNuevo = campoNombre.getText();
+            String direccionNueva = campoDireccion.getText();
+            String telNuevo = campoTelefono.getText();
 
-            try (Connection conexion = DriverManager.getConnection(URL, USER, PASSWORD);
-                 PreparedStatement ps = conexion.prepareStatement(sql);
-                 PreparedStatement psTel = conexion.prepareStatement(sqlTel)) {
+            try (Connection conexion = DriverManager.getConnection(URL, USER, PASSWORD)) {
 
-                ps.setString(1, campoNombre.getText());
-                ps.setString(2, campoDireccion.getText());
-                ps.setInt(3, Integer.parseInt(seleccionado.getId()));
-                ps.executeUpdate();
+                try (PreparedStatement ps = conexion.prepareStatement("UPDATE Personas SET nombre=? WHERE id=?")) {
+                    ps.setString(1, nombreNuevo);
+                    ps.setInt(2, Integer.parseInt(seleccionado.getId()));
+                    ps.executeUpdate();
+                }
 
-                psTel.setString(1, campoTelefono.getText());
-                psTel.setInt(2, Integer.parseInt(seleccionado.getId()));
-                psTel.executeUpdate();
+                try (PreparedStatement psDelDir = conexion.prepareStatement("DELETE FROM Direcciones WHERE personaId=?")) {
+                    psDelDir.setInt(1, Integer.parseInt(seleccionado.getId()));
+                    psDelDir.executeUpdate();
+                }
+                if (!campoDireccion.getText().trim().isEmpty()) {
+                    String[] direcciones = campoDireccion.getText().split(",");
+                    for (String dir : direcciones) {
+                        dir = dir.trim();
+                        if (!dir.isEmpty()) {
+                            String sqlInsertDir = "INSERT INTO Direcciones (personaId, direccion) VALUES (?, ?)";
+                            try (PreparedStatement psDir = conexion.prepareStatement(sqlInsertDir)) {
+                                psDir.setInt(1, Integer.parseInt(seleccionado.getId()));
+                                psDir.setString(2, dir);
+                                psDir.executeUpdate();
+                            }
+                        }
+                    }
+                }
 
+                try (PreparedStatement psDelTel = conexion.prepareStatement("DELETE FROM Telefonos WHERE personaId=?")) {
+                    psDelTel.setInt(1, Integer.parseInt(seleccionado.getId()));
+                    psDelTel.executeUpdate();
+                }
+                if (!telNuevo.trim().isEmpty()) {
+                    try (PreparedStatement psTel = conexion.prepareStatement("INSERT INTO Telefonos (personaId, telefono) VALUES (?, ?)")) {
+                        psTel.setInt(1, Integer.parseInt(seleccionado.getId()));
+                        psTel.setString(2, telNuevo);
+                        psTel.executeUpdate();
+                    }
+                }
                 new Alert(Alert.AlertType.INFORMATION, "Usuario actualizado correctamente").showAndWait();
                 agregarUsuariosTabla();
                 ventanaModif.close();
@@ -263,11 +296,67 @@ public class GUIFX extends Application {
             try (Connection conexion = DriverManager.getConnection(URL, USER, PASSWORD);
                  PreparedStatement psTel = conexion.prepareStatement(sqlTel)) {
 
-                psTel.setString(1, usuarioSelect.getId());
+                psTel.setInt(1, Integer.parseInt(usuarioSelect.getId()));
                 psTel.setString(2, campoTelefono.getText());
                 psTel.executeUpdate();
 
                 new Alert(Alert.AlertType.INFORMATION, "Teléfono agregado correctamente").showAndWait();
+                agregarUsuariosTabla();
+                ventanaModif.close();
+
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        });
+
+        cancelar.setOnAction(ev -> ventanaModif.close());
+        ventanaModif.setScene(new Scene(layout));
+        ventanaModif.showAndWait();
+    }
+
+    private void agregarDireccion(Stage si){
+        Usuario usuarioSelect = tabla.getSelectionModel().getSelectedItem();
+
+        if(usuarioSelect == null){
+            new Alert(Alert.AlertType.WARNING, "Selecciona un usuario para modificar").showAndWait();
+            return;
+        }
+
+        Stage ventanaModif = new Stage();
+        ventanaModif.initModality(Modality.APPLICATION_MODAL);
+        ventanaModif.initOwner(si);
+        ventanaModif.setTitle("Agregar Dirección");
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(10));
+
+        TextField campoDir = new TextField();
+
+        grid.add(new Label("Dirección:"), 0, 2);
+        grid.add(campoDir, 1, 2);
+
+        HBox botones = new HBox(10);
+        botones.setAlignment(Pos.CENTER);
+        Button guardar = new Button("Guardar");
+        Button cancelar = new Button("Cancelar");
+        botones.getChildren().addAll(guardar, cancelar);
+
+        VBox layout = new VBox(10, grid, botones);
+        layout.setPadding(new Insets(10));
+
+        guardar.setOnAction(e -> {
+            String sqlTel = "INSERT INTO direcciones (personaId, direccion) VALUES (?,?)";
+
+            try (Connection conexion = DriverManager.getConnection(URL, USER, PASSWORD);
+                 PreparedStatement psDir = conexion.prepareStatement(sqlTel)) {
+
+                psDir.setInt(1, Integer.parseInt(usuarioSelect.getId()));
+                psDir.setString(2, campoDir.getText());
+                psDir.executeUpdate();
+
+                new Alert(Alert.AlertType.INFORMATION, "Dirección agregada correctamente").showAndWait();
                 agregarUsuariosTabla();
                 ventanaModif.close();
 
@@ -290,7 +379,16 @@ public class GUIFX extends Application {
             while (rs.next()) {
                 int id = rs.getInt("id");
                 String nombre = rs.getString("nombre");
-                String direccion = rs.getString("direccion");
+
+                Statement stmtDir = conn.createStatement();
+                ResultSet rsDir = stmtDir.executeQuery("SELECT direccion FROM direcciones WHERE personaId = " + id);
+                StringBuilder direcciones = new StringBuilder();
+                while (rsDir.next()) {
+                    if (direcciones.length() > 0) direcciones.append(", ");
+                    direcciones.append(rsDir.getString("direccion"));
+                }
+                rsDir.close();
+                stmtDir.close();
 
                 Statement stmtTel = conn.createStatement();
                 ResultSet rsTel = stmtTel.executeQuery("SELECT telefono FROM Telefonos WHERE personaId = " + id);
@@ -307,7 +405,7 @@ public class GUIFX extends Application {
                         String.valueOf(id),
                         String.valueOf(id),
                         nombre,
-                        direccion,
+                        direcciones.toString(),
                         telefonos.toString()
                 ));
             }
